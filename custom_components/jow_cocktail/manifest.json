@@ -1,0 +1,13 @@
+{
+  "domain": "jow_cocktail",
+  "name": "Jow Cocktail",
+  "version": "0.1.0",
+  "documentation": "https://github.com/junkoku38/jow-cocktail",
+  "issue_tracker": "https://github.com/junkoku38/jow-cocktail/issues",
+  "codeowners": ["@junkoku38"],
+  "config_flow": true,
+  "iot_class": "cloud_polling",
+  "integration_type": "service",
+  "icon": "icon.png",
+  "requirements": []
+}

@@ -1,0 +1,30 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Jow Cocktail",
+        "description": "Configure your cocktail of the day integration. The AI agent generates queries based on your preferences and weather.",
+        "data": {
+          "name": "Instance name",
+          "covers": "Default glasses",
+          "preferences": "Preferences (e.g. not too sweet, gin-based)",
+          "ai_entity": "AI agent ai_task (e.g. ai_task.ollama_ai_task)",
+          "weather_entity": "Weather sensor (e.g. weather.home)"
+        }
+      }
+    },
+    "abort": { "already_configured": "Jow Cocktail is already configured." }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "data": {
+          "covers": "Default glasses",
+          "preferences": "Preferences",
+          "ai_entity": "AI agent ai_task",
+          "weather_entity": "Weather sensor"
+        }
+      }
+    }
+  }
+}

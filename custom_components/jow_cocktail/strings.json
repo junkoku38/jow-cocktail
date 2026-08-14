@@ -1,0 +1,30 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Jow Cocktail",
+        "description": "Configurez votre intégration cocktail du jour.",
+        "data": {
+          "name": "Nom de l'instance",
+          "covers": "Nombre de verres par défaut",
+          "ai_entity": "Agent IA (ex: ai_task.ollama_ai_task)",
+          "weather_entity": "Entité météo (facultatif)",
+          "preferences": "Préférences (ex: pas trop sucré, plutôt du gin)"
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Options Jow Cocktail",
+        "data": {
+          "covers": "Nombre de verres par défaut",
+          "ai_entity": "Agent IA (ex: ai_task.ollama_ai_task)",
+          "weather_entity": "Entité météo (facultatif)",
+          "preferences": "Préférences (ex: pas trop sucré, plutôt du gin)"
+        }
+      }
+    }
+  }
+}

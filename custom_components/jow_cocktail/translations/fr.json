@@ -1,0 +1,30 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Jow Cocktail",
+        "description": "Configurez votre intégration cocktail du jour. L'agent IA génère des requêtes adaptées à vos préférences et à la météo.",
+        "data": {
+          "name": "Nom de l'instance",
+          "covers": "Verres par défaut",
+          "preferences": "Préférences (ex: pas trop sucré, plutôt du gin)",
+          "ai_entity": "Agent IA ai_task (ex. ai_task.ollama_ai_task)",
+          "weather_entity": "Capteur météo (ex. weather.maison)"
+        }
+      }
+    },
+    "abort": { "already_configured": "Jow Cocktail est déjà configuré." }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "data": {
+          "covers": "Verres par défaut",
+          "preferences": "Préférences",
+          "ai_entity": "Agent IA ai_task",
+          "weather_entity": "Capteur météo"
+        }
+      }
+    }
+  }
+}

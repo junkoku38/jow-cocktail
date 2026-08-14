@@ -1,0 +1,130 @@
+suggest:
+  name: Suggérer un cocktail
+  description: >-
+    Génère une requête de recherche de cocktail adaptée aux préférences et
+    à la météo via un agent ai_task, puis cherche sur Jow et TheCocktailDB.
+    Si weekday est fourni, planifie automatiquement le premier résultat.
+  fields:
+    criteria:
+      name: Demande
+      description: Demande libre (ex. "cocktail rafraîchissant avec du gin", "something sour").
+      selector:
+        text:
+    weekday:
+      name: Jour de la semaine
+      description: Si fourni, planifie le premier résultat sur ce jour.
+      selector:
+        select:
+          options: [lundi, mardi, mercredi, jeudi, vendredi, samedi, dimanche]
+    limit:
+      name: Nombre de résultats
+      default: 5
+      selector:
+        number:
+          min: 1
+          max: 20
+    covers:
+      name: Nombre de verres
+      selector:
+        number:
+          min: 1
+          max: 12
+    weather_entity:
+      name: Capteur météo
+      selector:
+        entity:
+          domain: weather
+    ai_entity:
+      name: Agent IA
+      selector:
+        entity:
+          domain: ai_task
+    week_offset:
+      name: Décalage de semaine
+      default: 0
+      selector:
+        number:
+          min: -4
+          max: 8
+    ai_prompt:
+      name: Prompt IA personnalisé
+      selector:
+        text:
+
+clear:
+  name: Effacer le cocktail
+  fields:
+    weekday:
+      selector:
+        select:
+          options: [lundi, mardi, mercredi, jeudi, vendredi, samedi, dimanche]
+    date:
+      selector:
+        date:
+    week_offset:
+      default: 0
+      selector:
+        number:
+          min: -4
+          max: 8
+
+search:
+  name: Rechercher un cocktail
+  description: Renvoie les cocktails trouvés sur Jow et TheCocktailDB.
+  fields:
+    query:
+      required: true
+      selector:
+        text:
+    limit:
+      default: 5
+      selector:
+        number:
+          min: 1
+          max: 20
+
+plan:
+  name: Planifier un cocktail
+  description: Recherche un cocktail et l'épingle sur un jour.
+  fields:
+    query:
+      required: true
+      selector:
+        text:
+    weekday:
+      selector:
+        select:
+          options: [lundi, mardi, mercredi, jeudi, vendredi, samedi, dimanche]
+    date:
+      selector:
+        date:
+    week_offset:
+      default: 0
+      selector:
+        number:
+          min: -4
+          max: 8
+    covers:
+      selector:
+        number:
+          min: 1
+          max: 12
+    choice:
+      name: Résultat à retenir
+      default: 1
+      selector:
+        number:
+          min: 1
+          max: 10
+
+get_context:
+  name: Contexte IA
+  description: Retourne le contexte complet (préférences, cocktails récents).
+
+clear_recent:
+  name: Retirer de l'anti-répétition
+  fields:
+    date:
+      required: true
+      selector:
+        text:
