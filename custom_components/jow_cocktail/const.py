@@ -22,6 +22,7 @@ SERVICE_SEARCH = "search"
 SERVICE_PLAN = "plan"
 SERVICE_GET_CONTEXT = "get_context"
 SERVICE_CLEAR_RECENT = "clear_recent"
+SERVICE_CLEAR_HISTORY = "clear_history"
 
 # Attributs
 ATTR_QUERY = "query"

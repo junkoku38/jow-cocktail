@@ -128,3 +128,9 @@ clear_recent:
       required: true
       selector:
         text:
+
+clear_history:
+  name: Vider l'historique des cocktails
+  description: >-
+    Vide l'historique des cocktails déjà proposés. Tous les cocktails
+    pourront à nouveau être suggérés.

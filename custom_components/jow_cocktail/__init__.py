@@ -16,7 +16,8 @@ from .const import (
     ATTR_QUERY, ATTR_WEEK_OFFSET, ATTR_WEEKDAY, ATTR_ENTRY_NAME,
     ATTR_AI_PROMPT, CONF_AI_ENTITY, CONF_PREFERENCES, CONF_WEATHER_ENTITY,
     DEFAULT_COVERS, DOMAIN, SERVICE_SUGGEST, SERVICE_CLEAR, SERVICE_SEARCH,
-    SERVICE_PLAN, SERVICE_GET_CONTEXT, SERVICE_CLEAR_RECENT, WEEKDAYS,
+    SERVICE_PLAN, SERVICE_GET_CONTEXT, SERVICE_CLEAR_RECENT,
+    SERVICE_CLEAR_HISTORY, WEEKDAYS,
 )
 from .manager import CocktailManager, _cocktail_to_dict
 
@@ -125,6 +126,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         result = await mgr.async_clear_recent(date_iso)
         return result
 
+    async def handle_clear_history(call: ServiceCall) -> ServiceResponse:
+        mgr = _get_manager(hass, call, manager)
+        return mgr.clear_history()
+
     hass.services.async_register(
         DOMAIN, SERVICE_SUGGEST, handle_suggest,
         schema=vol.Schema({
@@ -183,6 +188,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             vol.Optional(ATTR_ENTRY_NAME): cv.string,
         }),
     )
+    hass.services.async_register(
+        DOMAIN, SERVICE_CLEAR_HISTORY, handle_clear_history,
+        schema=vol.Schema({}, extra=vol.ALLOW_EXTRA),
+        supports_response=SupportsResponse.ONLY,
+    )
 
     return True
 
@@ -192,6 +202,6 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if unload_ok:
         hass.data[DOMAIN].pop(entry.entry_id)
         if not hass.data[DOMAIN]:
-            for service in (SERVICE_SUGGEST, SERVICE_CLEAR, SERVICE_SEARCH, SERVICE_PLAN, SERVICE_GET_CONTEXT, SERVICE_CLEAR_RECENT):
+            for service in (SERVICE_SUGGEST, SERVICE_CLEAR, SERVICE_SEARCH, SERVICE_PLAN, SERVICE_GET_CONTEXT, SERVICE_CLEAR_RECENT, SERVICE_CLEAR_HISTORY):
                 hass.services.async_remove(DOMAIN, service)
     return unload_ok

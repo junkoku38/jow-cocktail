@@ -186,6 +186,9 @@ class CocktailManager:
         store_key = f"{STORAGE_KEY}.{entry_id}" if entry_id else STORAGE_KEY
         self._store: Store = Store(hass, STORAGE_VERSION, store_key)
         self.plan: dict[str, dict] = {}
+        # Historique des IDs de cocktails déjà proposés (survit au clear)
+        self.history: list[str] = []
+        self._history_max = 50
 
     # ------------------------------------------------------------------
     # Persistance
@@ -193,10 +196,22 @@ class CocktailManager:
     async def async_load(self) -> None:
         data = await self._store.async_load() or {}
         self.plan = data.get("plan", {})
+        self.history = data.get("history", [])
 
     async def async_save(self) -> None:
-        await self._store.async_save({"plan": self.plan})
+        await self._store.async_save({"plan": self.plan, "history": self.history})
         async_dispatcher_send(self.hass, SIGNAL_UPDATE)
+
+    def _add_to_history(self, cocktail_id: str) -> None:
+        """Ajoute un cocktail à l'historique (anti-répétition)."""
+        if not cocktail_id:
+            return
+        if cocktail_id in self.history:
+            self.history.remove(cocktail_id)
+        self.history.append(cocktail_id)
+        # Garder les 50 plus récents
+        if len(self.history) > self._history_max:
+            self.history = self.history[-self._history_max:]
 
     # ------------------------------------------------------------------
     # Planning
@@ -215,6 +230,12 @@ class CocktailManager:
     async def async_clear_cocktail(self, day: date) -> None:
         self.plan.pop(day.isoformat(), None)
         await self.async_save()
+
+    def clear_history(self) -> dict:
+        """Vide l'historique des cocktails déjà proposés."""
+        count = len(self.history)
+        self.history = []
+        return {"cleared": count}
 
     async def async_clear_recent(self, date_iso: str) -> dict:
         c = self.plan.get(date_iso)
@@ -395,6 +416,7 @@ class CocktailManager:
             if calories is not None:
                 chosen["calories"] = calories
         chosen["covers"] = covers
+        self._add_to_history(chosen.get("id", ""))
         self.plan[day.isoformat()] = chosen
         await self.async_save()
         return chosen
@@ -505,35 +527,43 @@ class CocktailManager:
         # async_search retourne déjà des dicts convertis — ne pas reconvertir
         cocktails = results
 
-        # Exclure les cocktails déjà planifiés récemment
+        # Exclure les cocktails déjà planifiés récemment ET l'historique
         deja_planifies = set()
         for day_iso, c in self.plan.items():
             if c and c.get("id") and day_iso >= cutoff:
                 if not c.get("_no_exclude"):
                     deja_planifies.add(c["id"])
+        # Ajouter l'historique (IDs des cocktails déjà proposés)
+        deja_planifies.update(self.history)
         if deja_planifies:
             avant = len(cocktails)
             cocktails = [c for c in cocktails if c.get("id") not in deja_planifies]
             _LOGGER.info("Cocktails dédupliqués : %d exclues, %d restantes",
                          avant - len(cocktails), len(cocktails))
 
+        # Si tout est exclu par l'historique, on relance la recherche
+        # avec une requête différente pour trouver de nouveaux cocktails
+        if not cocktails and self.history:
+            _LOGGER.info("Tous les cocktails exclus par l'historique, recherche élargie")
+            results = await self.async_search("cocktail", limit=max(limit * 3, 15))
+            cocktails = [c for c in results if c.get("id") not in deja_planifies]
+
         cocktails = cocktails[:limit]
 
-        # Si weekday fourni, planifier un résultat aléatoire parmi les premiers
-        # (pour varier entre Jow et TheCocktailDB)
+        # Si weekday fourni, planifier un résultat aléatoire parmi tous
+        # les résultats disponibles (pas seulement les 3 premiers)
         if weekday and weekday in WEEKDAYS and cocktails:
             import random
             day_idx = WEEKDAYS.index(weekday)
             target_date = self.week_dates(week_offset)[day_idx]
-            # Choisir aléatoirement parmi les 3 premiers résultats
-            pick_range = min(3, len(cocktails))
-            chosen = cocktails[random.randint(0, pick_range - 1)]
+            chosen = random.choice(cocktails)
             # Fetch calories si Jow
             if chosen.get("source") == "jow" and chosen.get("id"):
                 calories = await self.async_fetch_jow_calories(chosen["id"])
                 if calories is not None:
                     chosen["calories"] = calories
             chosen["covers"] = covers
+            self._add_to_history(chosen.get("id", ""))
             self.plan[target_date.isoformat()] = chosen
             await self.async_save()
             _LOGGER.info("Cocktail '%s' planifié sur %s via suggestion IA (source: %s)",
