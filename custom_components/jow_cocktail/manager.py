@@ -326,11 +326,18 @@ class CocktailManager:
     # Recherche combinée
     # ------------------------------------------------------------------
     async def async_search(self, query: str, limit: int = 5) -> list[dict]:
-        """Recherche sur Jow et TheCocktailDB, fusionne les résultats."""
+        """Recherche sur Jow et TheCocktailDB, fusionne en alternant les sources."""
         jow_results = await self.async_search_jow(query, limit=limit)
         cdb_results = await self.async_search_cocktaildb(query, limit=limit)
         covers = self.default_covers
-        all_recipes = jow_results + cdb_results
+        # Alterner Jow et CocktailDB pour avoir de la variété
+        all_recipes = []
+        max_len = max(len(jow_results), len(cdb_results))
+        for i in range(max_len):
+            if i < len(jow_results):
+                all_recipes.append(jow_results[i])
+            if i < len(cdb_results):
+                all_recipes.append(cdb_results[i])
         return [_cocktail_to_dict(r, covers) for r in all_recipes[:limit * 2]]
 
     async def async_plan_cocktail(
@@ -404,6 +411,8 @@ class CocktailManager:
             "sans guillemets ni ponctuation) adaptée au contexte. "
             "Il s'agit d'un COCKTAIL ou d'une boisson alcoolisée ou sans alcool. "
             "Varie le style (sour, sweet, fizz, tropical, classique, etc). "
+            "Réponds en ANGLAIS (ex: gin sour, mojito, espresso martini) "
+            "car la recherche se fait aussi sur une base anglophone. "
             "Réponds uniquement avec la requête."
         )
         if ai_prompt:
@@ -411,6 +420,7 @@ class CocktailManager:
                 f"{weather_ctx}{constraints}"
                 f"{ai_prompt} "
                 "Il s'agit d'un COCKTAIL. "
+                "Réponds en ANGLAIS. "
                 "Réponds uniquement avec la requête de recherche."
             )
 
