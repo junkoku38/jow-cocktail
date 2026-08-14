@@ -273,7 +273,14 @@ class CocktailManager:
             return data.get("content", []) if isinstance(data, dict) else []
 
         try:
-            return await self.hass.async_add_executor_job(_search) or []
+            results = await self.hass.async_add_executor_job(_search) or []
+            # Filtrer les plats salés : les cocktails n'ont pas de cookingTime
+            # (pas de cuisson), tandis que les plats ont cookingTime >= 5.
+            filtered = [r for r in results if not r.get("cookingTime")]
+            if filtered:
+                return filtered
+            # Si tous ont un cookingTime, garder quand même (mieux que rien)
+            return results
         except Exception as err:
             _LOGGER.error("Recherche Jow impossible (%s) : %s", query, err)
             return []
