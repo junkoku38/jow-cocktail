@@ -424,10 +424,19 @@ class CocktailManager:
     # Recherche combinée
     # ------------------------------------------------------------------
     async def async_search(self, query: str, limit: int = 5, sans_alcool: bool = False) -> list[dict]:
-        """Recherche sur Jow et TheCocktailDB, fusionne en alternant les sources."""
-        jow_results = await self.async_search_jow(query, limit=limit)
-        cdb_results = await self.async_search_cocktaildb(query, limit=limit, sans_alcool=sans_alcool)
+        """Recherche sur Jow et TheCocktailDB, fusionne en alternant les sources.
+        
+        Si sans_alcool=True, ignore Jow (qui ne filtre pas l'alcool) et
+        utilise uniquement TheCocktailDB filter.php?a=non_alcoholic.
+        """
         covers = self.default_covers
+        if sans_alcool:
+            # Jow ne comprend pas "sans alcool" — utiliser uniquement TheCocktailDB
+            cdb_results = await self.async_search_cocktaildb(query, limit=limit, sans_alcool=True)
+            return [_cocktail_to_dict(r, covers) for r in cdb_results[:limit * 2]]
+        
+        jow_results = await self.async_search_jow(query, limit=limit)
+        cdb_results = await self.async_search_cocktaildb(query, limit=limit)
         # Alterner Jow et CocktailDB pour avoir de la variété
         all_recipes = []
         max_len = max(len(jow_results), len(cdb_results))
@@ -588,31 +597,15 @@ class CocktailManager:
             results = await self.async_search("cocktail", limit=max(limit * 3, 15), sans_alcool=sans_alcool)
             cocktails = [c for c in results if c.get("id") not in deja_planifies]
 
-        # Filtrer par alcool si demandé
-        if sans_alcool:
-            ALCOOL = ("vodka", "gin", "rhum", "rum", "whisky", "whiskey",
-                      "cognac", "vermouth", "tequila", "pastis", "ricard",
-                      "absinthe", "triple sec", "cointreau", "grand marnier",
-                      "amaretto", "kahlua", "baileys", "martini", "champagne",
-                      "vin", "wine", "beer", "bière", "biere", "saké", "sake",
-                      "bourbon", "calvados", "chartreuse", "curaçao", "curacao",
-                      "malibu", "ouzo", "sambuca", "portoo", "sherry",
-                      "campari", "aperol", "prosecco", "liqueur",
-                      "negroni", "bitter", "angostura")
-            def _has_alcool(c):
-                # TheCocktailDB
-                if c.get("alcohol") == "Alcoholic":
-                    return True
-                # Jow : vérifier les ingrédients
-                for ing in c.get("ingredients", []):
-                    nom = (ing.get("name") or "").lower()
-                    if any(a in nom for a in ALCOOL):
-                        return True
-                return False
-            cocktails = [c for c in cocktails if not _has_alcool(c)]
-            _LOGGER.info("Filtrage sans alcool : %d cocktails restants", len(cocktails))
-
         cocktails = cocktails[:limit]
+
+        # Si on ne demande pas "sans alcool", privilégier les cocktails
+        # alcoolisés (TheCocktailDB) en mettant les "Non alcoholic" en fin
+        if not sans_alcool and cocktails:
+            alcoolises = [c for c in cocktails if c.get("alcohol") != "Non alcoholic" and c.get("alcohol") != "Non-Alcoholic"]
+            non_alcoolises = [c for c in cocktails if c.get("alcohol") in ("Non alcoholic", "Non-Alcoholic")]
+            if alcoolises:
+                cocktails = alcoolises + non_alcoolises
 
         if weekday and weekday in WEEKDAYS and cocktails:
             import random
