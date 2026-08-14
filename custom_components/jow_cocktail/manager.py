@@ -519,11 +519,15 @@ class CocktailManager:
 
         cocktails = cocktails[:limit]
 
-        # Si weekday fourni, planifier le premier résultat
+        # Si weekday fourni, planifier un résultat aléatoire parmi les premiers
+        # (pour varier entre Jow et TheCocktailDB)
         if weekday and weekday in WEEKDAYS and cocktails:
+            import random
             day_idx = WEEKDAYS.index(weekday)
             target_date = self.week_dates(week_offset)[day_idx]
-            chosen = cocktails[0]
+            # Choisir aléatoirement parmi les 3 premiers résultats
+            pick_range = min(3, len(cocktails))
+            chosen = cocktails[random.randint(0, pick_range - 1)]
             # Fetch calories si Jow
             if chosen.get("source") == "jow" and chosen.get("id"):
                 calories = await self.async_fetch_jow_calories(chosen["id"])
@@ -532,7 +536,7 @@ class CocktailManager:
             chosen["covers"] = covers
             self.plan[target_date.isoformat()] = chosen
             await self.async_save()
-            _LOGGER.info("Cocktail '%s' planifié sur %s via suggestion IA",
-                         chosen.get("name", ""), weekday)
+            _LOGGER.info("Cocktail '%s' planifié sur %s via suggestion IA (source: %s)",
+                         chosen.get("name", ""), weekday, chosen.get("source", "?"))
 
         return cocktails
