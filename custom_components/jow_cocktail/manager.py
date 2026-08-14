@@ -288,10 +288,16 @@ class CocktailManager:
     # Recherche TheCocktailDB
     # ------------------------------------------------------------------
     async def async_search_cocktaildb(self, query: str, limit: int = 5) -> list[dict]:
-        def _search():
-            resp = requests.get(
-                COCKTAILDB_SEARCH, params={"s": query}, timeout=10
-            )
+        """Recherche sur TheCocktailDB.
+        
+        TheCocktailDB fait une recherche par nom (search.php?s=) qui ne matche
+        pas les requêtes IA comme "fresh gin cocktail". On essaime donc :
+        1. Recherche par nom (search.php?s=query)
+        2. Si aucun résultat, extraction du premier mot comme ingrédient
+           (filter.php?i=ingredient) puis lookup détaillé.
+        """
+        def _search_by_name(q):
+            resp = requests.get(COCKTAILDB_SEARCH, params={"s": q}, timeout=10)
             resp.raise_for_status()
             data = resp.json()
             drinks = data.get("drinks") or []
@@ -299,8 +305,42 @@ class CocktailManager:
                 d["_source"] = "cocktaildb"
             return drinks[:limit]
 
+        def _search_by_ingredient(ingredient):
+            resp = requests.get(COCKTAILDB_FILTER, params={"i": ingredient}, timeout=10)
+            resp.raise_for_status()
+            data = resp.json()
+            drinks = data.get("drinks") or []
+            # Pour chaque drink, fetch les détails
+            detailed = []
+            for d in drinks[:limit]:
+                drink_id = d.get("idDrink")
+                if not drink_id:
+                    continue
+                try:
+                    resp2 = requests.get(COCKTAILDB_LOOKUP, params={"i": drink_id}, timeout=10)
+                    resp2.raise_for_status()
+                    d2 = resp2.json().get("drinks") or []
+                    if d2:
+                        d2[0]["_source"] = "cocktaildb"
+                        detailed.append(d2[0])
+                except Exception:
+                    continue
+            return detailed
+
         try:
-            return await self.hass.async_add_executor_job(_search) or []
+            # 1. Recherche par nom
+            results = await self.hass.async_add_executor_job(_search_by_name, query)
+            if results:
+                return results
+
+            # 2. Fallback : extraire le premier mot comme ingrédient
+            words = query.strip().split()
+            for word in words:
+                if len(word) >= 3 and word.lower() not in ("cocktail", "drink", "fresh", "with", "the", "and"):
+                    results = await self.hass.async_add_executor_job(_search_by_ingredient, word)
+                    if results:
+                        return results
+            return []
         except Exception as err:
             _LOGGER.error("Recherche TheCocktailDB impossible (%s) : %s", query, err)
             return []
