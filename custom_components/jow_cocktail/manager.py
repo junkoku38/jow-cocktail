@@ -16,6 +16,7 @@ from homeassistant.helpers.storage import Store
 
 from .const import (
     COCKTAILDB_LOOKUP, COCKTAILDB_RANDOM, COCKTAILDB_SEARCH,
+    COCKTAILDB_FILTER, COCKTAILDB_LIST,
     DEFAULT_COVERS, DOMAIN, RECIPE_BASE_URL, SIGNAL_UPDATE,
     STORAGE_KEY, STORAGE_VERSION, WEEKDAYS,
 )
@@ -315,7 +316,7 @@ class CocktailManager:
     # ------------------------------------------------------------------
     # Recherche TheCocktailDB
     # ------------------------------------------------------------------
-    async def async_search_cocktaildb(self, query: str, limit: int = 5) -> list[dict]:
+    async def async_search_cocktaildb(self, query: str, limit: int = 5, sans_alcool: bool = False) -> list[dict]:
         """Recherche sur TheCocktailDB.
         
         TheCocktailDB fait une recherche par nom (search.php?s=) qui ne matche
@@ -323,6 +324,7 @@ class CocktailManager:
         1. Recherche par nom (search.php?s=query)
         2. Si aucun résultat, extraction du premier mot comme ingrédient
            (filter.php?i=ingredient) puis lookup détaillé.
+        Si sans_alcool=True, filtre les résultats avec strAlcoholic != "Alcoholic".
         """
         def _search_by_name(q):
             resp = requests.get(COCKTAILDB_SEARCH, params={"s": q}, timeout=10)
@@ -338,7 +340,6 @@ class CocktailManager:
             resp.raise_for_status()
             data = resp.json()
             drinks = data.get("drinks") or []
-            # Pour chaque drink, fetch les détails
             detailed = []
             for d in drinks[:limit]:
                 drink_id = d.get("idDrink")
@@ -355,7 +356,38 @@ class CocktailManager:
                     continue
             return detailed
 
+        def _filter_non_alcoholic(drinks):
+            """Filtre les cocktails alcoolisés."""
+            return [d for d in drinks if d.get("strAlcoholic") != "Alcoholic"]
+
         try:
+            # Si sans alcool, utiliser l'endpoint dédié
+            if sans_alcool:
+                # list.php?a=non_alcoholic retourne tous les mocktails
+                def _list_non_alcoholic():
+                    resp = requests.get(COCKTAILDB_LIST, params={"a": "non_alcoholic"}, timeout=10)
+                    resp.raise_for_status()
+                    data = resp.json()
+                    drinks = data.get("drinks") or []
+                    # Pour chaque drink, fetch les détails
+                    detailed = []
+                    for d in drinks[:limit * 2]:
+                        drink_id = d.get("idDrink")
+                        if not drink_id:
+                            continue
+                        try:
+                            resp2 = requests.get(COCKTAILDB_LOOKUP, params={"i": drink_id}, timeout=10)
+                            resp2.raise_for_status()
+                            d2 = resp2.json().get("drinks") or []
+                            if d2:
+                                d2[0]["_source"] = "cocktaildb"
+                                detailed.append(d2[0])
+                        except Exception:
+                            continue
+                    return detailed
+                results = await self.hass.async_add_executor_job(_list_non_alcoholic)
+                return results[:limit]
+
             # 1. Recherche par nom
             results = await self.hass.async_add_executor_job(_search_by_name, query)
             if results:
@@ -364,7 +396,7 @@ class CocktailManager:
             # 2. Fallback : extraire le premier mot comme ingrédient
             words = query.strip().split()
             for word in words:
-                if len(word) >= 3 and word.lower() not in ("cocktail", "drink", "fresh", "with", "the", "and"):
+                if len(word) >= 3 and word.lower() not in ("cocktail", "drink", "fresh", "with", "the", "and", "sans", "alcool", "mocktail", "virgin", "non"):
                     results = await self.hass.async_add_executor_job(_search_by_ingredient, word)
                     if results:
                         return results
@@ -393,10 +425,10 @@ class CocktailManager:
     # ------------------------------------------------------------------
     # Recherche combinée
     # ------------------------------------------------------------------
-    async def async_search(self, query: str, limit: int = 5) -> list[dict]:
+    async def async_search(self, query: str, limit: int = 5, sans_alcool: bool = False) -> list[dict]:
         """Recherche sur Jow et TheCocktailDB, fusionne en alternant les sources."""
         jow_results = await self.async_search_jow(query, limit=limit)
-        cdb_results = await self.async_search_cocktaildb(query, limit=limit)
+        cdb_results = await self.async_search_cocktaildb(query, limit=limit, sans_alcool=sans_alcool)
         covers = self.default_covers
         # Alterner Jow et CocktailDB pour avoir de la variété
         all_recipes = []
@@ -493,45 +525,51 @@ class CocktailManager:
                 "Réponds uniquement avec la requête de recherche."
             )
 
-        # Appel ai_task.generate_data
+        # Si l'utilisateur a fourni un critère précis, l'utiliser directement
+        # comme requête de recherche sans passer par l'IA (qui pourrait déformer
+        # la demande). L'IA n'est utilisée que pour les suggestions sans critère
+        # (bouton "Surprends-moi").
         query = ""
-        if ai_ent:
-            try:
-                response = await self.hass.services.async_call(
-                    "ai_task",
-                    "generate_data",
-                    {
-                        "task_name": "jow_cocktail_suggest",
-                        "instructions": instructions,
-                        "entity_id": ai_ent,
-                    },
-                    blocking=True,
-                    return_response=True,
-                )
-                if isinstance(response, dict):
-                    data = response.get("data")
-                    if not data:
-                        data = response.get("response", {}).get("data", "")
-                    if not data:
-                        for _k, val in response.items():
-                            if isinstance(val, dict) and "data" in val:
-                                data = val["data"]
-                                break
-                    query = str(data or "").strip().strip('"').strip("'")
-                elif isinstance(response, str):
-                    query = response.strip().strip('"').strip("'")
-            except Exception as err:
-                _LOGGER.warning("ai_task.generate_data a échoué : %s", err)
-                query = ""
+        # Détecter la demande "sans alcool"
+        criteria_lower = (criteria or "").lower()
+        sans_alcool = any(kw in criteria_lower for kw in
+                          ("sans alcool", "mocktail", "no alcohol", "virgin",
+                           "sans alcool", "boisson sans alcool"))
+        
+        if not criteria:
+            if ai_ent:
+                try:
+                    response = await self.hass.services.async_call(
+                        "ai_task", "generate_data",
+                        {
+                            "task_name": "jow_cocktail_suggest",
+                            "instructions": instructions,
+                            "entity_id": ai_ent,
+                        },
+                        blocking=True, return_response=True,
+                    )
+                    if isinstance(response, dict):
+                        data = response.get("data")
+                        if not data:
+                            data = response.get("response", {}).get("data", "")
+                        if not data:
+                            for _k, val in response.items():
+                                if isinstance(val, dict) and "data" in val:
+                                    data = val["data"]
+                                    break
+                        query = str(data or "").strip().strip('"').strip("'")
+                    elif isinstance(response, str):
+                        query = response.strip().strip('"').strip("'")
+                except Exception as err:
+                    _LOGGER.warning("ai_task.generate_data a échoué : %s", err)
+                    query = ""
 
-        # Fallback
         if not query:
             query = criteria or "cocktail"
 
-        _LOGGER.info("Requête cocktail suggérée par l'IA : %s", query)
-        results = await self.async_search(query, limit=max(limit * 2, 10))
+        _LOGGER.info("Requête cocktail suggérée : %s (sans_alcool=%s)", query, sans_alcool)
+        results = await self.async_search(query, limit=max(limit * 2, 10), sans_alcool=sans_alcool)
         covers = covers or self.default_covers
-        # async_search retourne déjà des dicts convertis — ne pas reconvertir
         cocktails = results
 
         # Exclure les cocktails déjà planifiés récemment ET l'historique
@@ -540,7 +578,6 @@ class CocktailManager:
             if c and c.get("id") and day_iso >= cutoff:
                 if not c.get("_no_exclude"):
                     deja_planifies.add(c["id"])
-        # Ajouter l'historique (IDs des cocktails déjà proposés)
         deja_planifies.update(self.history)
         if deja_planifies:
             avant = len(cocktails)
@@ -548,23 +585,27 @@ class CocktailManager:
             _LOGGER.info("Cocktails dédupliqués : %d exclues, %d restantes",
                          avant - len(cocktails), len(cocktails))
 
-        # Si tout est exclu par l'historique, on relance la recherche
-        # avec une requête différente pour trouver de nouveaux cocktails
         if not cocktails and self.history:
             _LOGGER.info("Tous les cocktails exclus par l'historique, recherche élargie")
-            results = await self.async_search("cocktail", limit=max(limit * 3, 15))
+            results = await self.async_search("cocktail", limit=max(limit * 3, 15), sans_alcool=sans_alcool)
             cocktails = [c for c in results if c.get("id") not in deja_planifies]
+
+        # Filtrer par alcool si demandé
+        if sans_alcool:
+            cocktails = [c for c in cocktails if c.get("alcohol") != "Alcoholic"]
+            _LOGGER.info("Filtrage sans alcool : %d cocktails restants", len(cocktails))
 
         cocktails = cocktails[:limit]
 
-        # Si weekday fourni, planifier un résultat aléatoire parmi tous
-        # les résultats disponibles (pas seulement les 3 premiers)
         if weekday and weekday in WEEKDAYS and cocktails:
             import random
             day_idx = WEEKDAYS.index(weekday)
             target_date = self.week_dates(week_offset)[day_idx]
-            chosen = random.choice(cocktails)
-            # Fetch calories si Jow
+            # Si l'utilisateur a fourni un critère précis, prendre le 1er résultat
+            if criteria:
+                chosen = cocktails[0]
+            else:
+                chosen = random.choice(cocktails)
             if chosen.get("source") == "jow" and chosen.get("id"):
                 calories = await self.async_fetch_jow_calories(chosen["id"])
                 if calories is not None:
@@ -573,7 +614,8 @@ class CocktailManager:
             self._add_to_history(chosen.get("id", ""))
             self.plan[target_date.isoformat()] = chosen
             await self.async_save()
-            _LOGGER.info("Cocktail '%s' planifié sur %s via suggestion IA (source: %s)",
-                         chosen.get("name", ""), weekday, chosen.get("source", "?"))
+            _LOGGER.info("Cocktail '%s' planifié sur %s (criteria=%s, source=%s, alcohol=%s)",
+                         chosen.get("name", ""), weekday, bool(criteria),
+                         chosen.get("source", "?"), chosen.get("alcohol", "?"))
 
         return cocktails
