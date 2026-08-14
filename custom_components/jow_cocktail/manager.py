@@ -592,7 +592,26 @@ class CocktailManager:
 
         # Filtrer par alcool si demandé
         if sans_alcool:
-            cocktails = [c for c in cocktails if c.get("alcohol") != "Alcoholic"]
+            ALCOOL = ("vodka", "gin", "rhum", "rum", "whisky", "whiskey",
+                      "cognac", "vermouth", "tequila", "pastis", "ricard",
+                      "absinthe", "triple sec", "cointreau", "grand marnier",
+                      "amaretto", "kahlua", "baileys", "martini", "champagne",
+                      "vin", "wine", "beer", "bière", "biere", "saké", "sake",
+                      "bourbon", "calvados", "chartreuse", "curaçao", "curacao",
+                      "malibu", "ouzo", "sambuca", "portoo", "sherry",
+                      "campari", "aperol", "prosecco", "liqueur",
+                      "negroni", "bitter", "angostura")
+            def _has_alcool(c):
+                # TheCocktailDB
+                if c.get("alcohol") == "Alcoholic":
+                    return True
+                # Jow : vérifier les ingrédients
+                for ing in c.get("ingredients", []):
+                    nom = (ing.get("name") or "").lower()
+                    if any(a in nom for a in ALCOOL):
+                        return True
+                return False
+            cocktails = [c for c in cocktails if not _has_alcool(c)]
             _LOGGER.info("Filtrage sans alcool : %d cocktails restants", len(cocktails))
 
         cocktails = cocktails[:limit]
