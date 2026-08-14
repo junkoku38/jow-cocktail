@@ -86,8 +86,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     async def handle_search(call: ServiceCall) -> ServiceResponse:
         mgr = _get_manager(hass, call, manager)
         results = await mgr.async_search(call.data[ATTR_QUERY], limit=call.data.get(ATTR_LIMIT, 5))
-        covers = call.data.get(ATTR_COVERS) or mgr.default_covers
-        return {"cocktails": [_cocktail_to_dict(r, covers) for r in results]}
+        return {"cocktails": results}
 
     async def handle_plan(call: ServiceCall) -> ServiceResponse:
         mgr = _get_manager(hass, call, manager)

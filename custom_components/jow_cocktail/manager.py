@@ -452,7 +452,8 @@ class CocktailManager:
         _LOGGER.info("Requête cocktail suggérée par l'IA : %s", query)
         results = await self.async_search(query, limit=max(limit * 2, 10))
         covers = covers or self.default_covers
-        cocktails = [_cocktail_to_dict(r, covers) for r in results]
+        # async_search retourne déjà des dicts convertis — ne pas reconvertir
+        cocktails = results
 
         # Exclure les cocktails déjà planifiés récemment
         deja_planifies = set()
