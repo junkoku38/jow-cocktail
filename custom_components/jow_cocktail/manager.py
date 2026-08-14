@@ -363,13 +363,11 @@ class CocktailManager:
         try:
             # Si sans alcool, utiliser l'endpoint dédié
             if sans_alcool:
-                # list.php?a=non_alcoholic retourne tous les mocktails
                 def _list_non_alcoholic():
-                    resp = requests.get(COCKTAILDB_LIST, params={"a": "non_alcoholic"}, timeout=10)
+                    resp = requests.get(COCKTAILDB_FILTER, params={"a": "non_alcoholic"}, timeout=10)
                     resp.raise_for_status()
                     data = resp.json()
                     drinks = data.get("drinks") or []
-                    # Pour chaque drink, fetch les détails
                     detailed = []
                     for d in drinks[:limit * 2]:
                         drink_id = d.get("idDrink")
