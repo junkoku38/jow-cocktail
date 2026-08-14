@@ -1,7 +1,7 @@
 {
   "domain": "jow_cocktail",
   "name": "Jow Cocktail",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "documentation": "https://github.com/junkoku38/jow-cocktail",
   "issue_tracker": "https://github.com/junkoku38/jow-cocktail/issues",
   "codeowners": ["@junkoku38"],

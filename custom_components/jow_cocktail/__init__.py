@@ -138,6 +138,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             vol.Optional(ATTR_ENTRY_NAME): cv.string,
             vol.Optional(ATTR_AI_PROMPT): cv.string,
         }),
+        supports_response=SupportsResponse.OPTIONAL,
     )
     hass.services.async_register(
         DOMAIN, SERVICE_CLEAR, handle_clear,
@@ -156,6 +157,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             vol.Optional(ATTR_COVERS): vol.Coerce(int),
             vol.Optional(ATTR_ENTRY_NAME): cv.string,
         }),
+        supports_response=SupportsResponse.ONLY,
     )
     hass.services.async_register(
         DOMAIN, SERVICE_PLAN, handle_plan,
