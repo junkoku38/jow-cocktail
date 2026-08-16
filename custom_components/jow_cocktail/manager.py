@@ -589,6 +589,13 @@ class CocktailManager:
         results = await self.async_search(query, limit=max(limit * 2, 10), sans_alcool=sans_alcool)
         covers = covers or self.default_covers
         cocktails = results
+        
+        # Si aucun résultat, essayer avec moins de mots (fallback progressif)
+        if not cocktails and query and " " in query and not sans_alcool:
+            shorter = " ".join(query.split()[:2])
+            _LOGGER.info("Recherche cocktail élargie avec « %s »", shorter)
+            results = await self.async_search(shorter, limit=max(limit * 2, 10), sans_alcool=sans_alcool)
+            cocktails = results
 
         # Exclure les cocktails déjà planifiés récemment ET l'historique
         deja_planifies = set()
