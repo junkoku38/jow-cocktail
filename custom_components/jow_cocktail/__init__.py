@@ -42,7 +42,11 @@ def _resolve_date(manager: CocktailManager, call: ServiceCall) -> date:
     if raw := call.data.get(ATTR_DATE):
         if isinstance(raw, date):
             return raw
-        return datetime.fromisoformat(str(raw)).date()
+        try:
+            return datetime.fromisoformat(str(raw)).date()
+        except ValueError:
+            _LOGGER.warning("Date invalide reçue « %s », utilisation d'aujourd'hui", raw)
+            return date.today()
     weekday = call.data.get(ATTR_WEEKDAY)
     offset = call.data.get(ATTR_WEEK_OFFSET, 0)
     if weekday:

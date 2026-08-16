@@ -16,7 +16,7 @@ from homeassistant.helpers.storage import Store
 
 from .const import (
     COCKTAILDB_LOOKUP, COCKTAILDB_RANDOM, COCKTAILDB_SEARCH,
-    COCKTAILDB_FILTER, COCKTAILDB_LIST,
+    COCKTAILDB_FILTER,
     DEFAULT_COVERS, DOMAIN, RECIPE_BASE_URL, SIGNAL_UPDATE,
     STORAGE_KEY, STORAGE_VERSION, WEEKDAYS,
 )
@@ -41,9 +41,6 @@ _JOW_HEADERS = {
     "referer": "https://jow.fr/",
     "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
 }
-_JOW_PARAMS = {"start": "0", "availabilityZoneId": "FR"}
-
-
 def _safe_url(value: Any, fallback: str | None = None) -> str | None:
     if not value or not isinstance(value, str):
         return fallback
@@ -283,7 +280,7 @@ class CocktailManager:
             # Si tous ont un cookingTime, garder quand même (mieux que rien)
             return results
         except Exception as err:
-            _LOGGER.error("Recherche Jow impossible (%s) : %s", query, err)
+            _LOGGER.warning("Recherche Jow impossible (%s) : %s", query, err)
             return []
 
     async def async_fetch_jow_calories(self, recipe_id: str) -> int | None:
@@ -340,25 +337,25 @@ class CocktailManager:
             resp.raise_for_status()
             data = resp.json()
             drinks = data.get("drinks") or []
-            detailed = []
-            for d in drinks[:limit]:
-                drink_id = d.get("idDrink")
-                if not drink_id:
-                    continue
-                try:
-                    resp2 = requests.get(COCKTAILDB_LOOKUP, params={"i": drink_id}, timeout=10)
-                    resp2.raise_for_status()
-                    d2 = resp2.json().get("drinks") or []
-                    if d2:
-                        d2[0]["_source"] = "cocktaildb"
-                        detailed.append(d2[0])
-                except Exception:
-                    continue
-            return detailed
+            return drinks[:limit]
 
-        def _filter_non_alcoholic(drinks):
-            """Filtre les cocktails alcoolisés."""
-            return [d for d in drinks if d.get("strAlcoholic") != "Alcoholic"]
+        def _lookup_drink(drink_id):
+            resp = requests.get(COCKTAILDB_LOOKUP, params={"i": drink_id}, timeout=10)
+            resp.raise_for_status()
+            d2 = resp.json().get("drinks") or []
+            if d2:
+                d2[0]["_source"] = "cocktaildb"
+                return d2[0]
+            return None
+
+        async def _parallel_lookup(drinks_list):
+            import asyncio
+            ids = [d.get("idDrink") for d in drinks_list if d.get("idDrink")]
+            lookups = await asyncio.gather(
+                *[self.hass.async_add_executor_job(_lookup_drink, did) for did in ids],
+                return_exceptions=True,
+            )
+            return [r for r in lookups if isinstance(r, dict)]
 
         try:
             # Si sans alcool, utiliser l'endpoint dédié
@@ -367,23 +364,9 @@ class CocktailManager:
                     resp = requests.get(COCKTAILDB_FILTER, params={"a": "non_alcoholic"}, timeout=10)
                     resp.raise_for_status()
                     data = resp.json()
-                    drinks = data.get("drinks") or []
-                    detailed = []
-                    for d in drinks[:limit * 2]:
-                        drink_id = d.get("idDrink")
-                        if not drink_id:
-                            continue
-                        try:
-                            resp2 = requests.get(COCKTAILDB_LOOKUP, params={"i": drink_id}, timeout=10)
-                            resp2.raise_for_status()
-                            d2 = resp2.json().get("drinks") or []
-                            if d2:
-                                d2[0]["_source"] = "cocktaildb"
-                                detailed.append(d2[0])
-                        except Exception:
-                            continue
-                    return detailed
-                results = await self.hass.async_add_executor_job(_list_non_alcoholic)
+                    return data.get("drinks") or []
+                drinks = await self.hass.async_add_executor_job(_list_non_alcoholic)
+                results = await _parallel_lookup(drinks[:limit * 2])
                 return results[:limit]
 
             # 1. Recherche par nom
@@ -395,9 +378,11 @@ class CocktailManager:
             words = query.strip().split()
             for word in words:
                 if len(word) >= 3 and word.lower() not in ("cocktail", "drink", "fresh", "with", "the", "and", "sans", "alcool", "mocktail", "virgin", "non"):
-                    results = await self.hass.async_add_executor_job(_search_by_ingredient, word)
-                    if results:
-                        return results
+                    drinks = await self.hass.async_add_executor_job(_search_by_ingredient, word)
+                    if drinks:
+                        results = await _parallel_lookup(drinks)
+                        if results:
+                            return results
             return []
         except Exception as err:
             _LOGGER.error("Recherche TheCocktailDB impossible (%s) : %s", query, err)
@@ -541,7 +526,7 @@ class CocktailManager:
         criteria_lower = (criteria or "").lower()
         sans_alcool = any(kw in criteria_lower for kw in
                           ("sans alcool", "mocktail", "no alcohol", "virgin",
-                           "sans alcool", "boisson sans alcool"))
+                           "boisson sans alcool"))
         
         if not criteria:
             if ai_ent:
