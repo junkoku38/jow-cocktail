@@ -517,9 +517,8 @@ class CocktailManager:
                 "Réponds uniquement avec la requête de recherche."
             )
 
-        # Si l'utilisateur a fourni un critère court (1-5 mots), l'utiliser
-        # directement. Si c'est une phrase longue ou complexe, utiliser l'IA
-        # pour extraire une requête de recherche courte.
+        # L'IA raisonne sur la demande de l'utilisateur pour proposer une
+        # requête de recherche pertinente. Si pas d'IA, fallback mots-clés.
         query = ""
         # Détecter la demande "sans alcool"
         criteria_lower = (criteria or "").lower()
@@ -527,51 +526,56 @@ class CocktailManager:
                           ("sans alcool", "mocktail", "no alcohol", "virgin",
                            "boisson sans alcool"))
         
-        criteria_words = criteria.strip().split() if criteria else []
-        is_long_phrase = len(criteria_words) > 5
-        
-        if not criteria or (is_long_phrase and ai_ent):
-            # Pas de critère → l'IA génère une requête (Surprends-moi)
-            # Phrase longue → l'IA extrait une requête courte
-            if ai_ent:
-                if is_long_phrase:
-                    instructions = (
-                        f"{weather_ctx}{constraints}"
-                        f"Transforme cette demande en requête de recherche de "
-                        f"cocktail courte (2 à 5 mots, en ANGLAIS) : « {criteria} ». "
-                        "Il s'agit d'un COCKTAIL. "
-                        "Réponds uniquement avec la requête de recherche."
-                    )
-                try:
-                    response = await self.hass.services.async_call(
-                        "ai_task", "generate_data",
-                        {
-                            "task_name": "jow_cocktail_suggest",
-                            "instructions": instructions,
-                            "entity_id": ai_ent,
-                        },
-                        blocking=True, return_response=True,
-                    )
-                    if isinstance(response, dict):
-                        data = response.get("data")
-                        if not data:
-                            data = response.get("response", {}).get("data", "")
-                        if not data:
-                            for _k, val in response.items():
-                                if isinstance(val, dict) and "data" in val:
-                                    data = val["data"]
-                                    break
-                        query = str(data or "").strip().strip('"').strip("'")
-                    elif isinstance(response, str):
-                        query = response.strip().strip('"').strip("'")
-                except Exception as err:
-                    _LOGGER.warning("ai_task.generate_data a échoué : %s", err)
-                    query = ""
+        if ai_ent:
+            # Construire le prompt selon le contexte
+            if criteria:
+                reasoning_prompt = (
+                    f"{weather_ctx}{constraints}"
+                    f"Un utilisateur demande : « {criteria} ». "
+                    "Analyse cette demande et génère la meilleure requête de "
+                    "recherche de cocktail (2 à 5 mots, en ANGLAIS) pour "
+                    "trouver ce que l'utilisateur veut vraiment. "
+                    "Réfléchis : si l'utilisateur dit 'facile à faire avec du rhum', "
+                    "propose 'rum punch' ou 'daiquiri'. "
+                    "Si l'utilisateur dit 'rafrîchissant pour l'été', propose "
+                    "'mojito' ou 'aqua fresca'. "
+                    "Si l'utilisateur dit 'sans alcool', propose un mocktail. "
+                    "Il s'agit d'un COCKTAIL. "
+                    "Réponds uniquement avec la requête de recherche."
+                )
+            else:
+                reasoning_prompt = instructions
+            
+            try:
+                response = await self.hass.services.async_call(
+                    "ai_task", "generate_data",
+                    {
+                        "task_name": "jow_cocktail_suggest",
+                        "instructions": reasoning_prompt,
+                        "entity_id": ai_ent,
+                    },
+                    blocking=True, return_response=True,
+                )
+                if isinstance(response, dict):
+                    data = response.get("data")
+                    if not data:
+                        data = response.get("response", {}).get("data", "")
+                    if not data:
+                        for _k, val in response.items():
+                            if isinstance(val, dict) and "data" in val:
+                                data = val["data"]
+                                break
+                    query = str(data or "").strip().strip('"').strip("'")
+                elif isinstance(response, str):
+                    query = response.strip().strip('"').strip("'")
+            except Exception as err:
+                _LOGGER.warning("ai_task.generate_data a échoué : %s", err)
+                query = ""
 
         if not query:
-            # Fallback : extraire les mots-clés pertinents de la phrase
-            if is_long_phrase:
-                # Garder les mots > 3 lettres, igniser les mots vides
+            # Fallback : extraire les mots-clés pertinents
+            criteria_words = criteria.strip().split() if criteria else []
+            if criteria_words:
                 stop_words = {"propose", "moi", "un", "une", "des", "avec", "sans",
                               "facile", "faire", "base", "pour", "the", "and",
                               "cocktail", "drink", "boisson", "alcool"}
@@ -579,7 +583,7 @@ class CocktailManager:
                            if len(w) > 3 and w.lower() not in stop_words]
                 query = " ".join(keywords[:4]) if keywords else "cocktail"
             else:
-                query = criteria or "cocktail"
+                query = "cocktail"
 
         _LOGGER.info("Requête cocktail suggérée : %s (sans_alcool=%s)", query, sans_alcool)
         results = await self.async_search(query, limit=max(limit * 2, 10), sans_alcool=sans_alcool)
