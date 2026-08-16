@@ -517,10 +517,9 @@ class CocktailManager:
                 "Réponds uniquement avec la requête de recherche."
             )
 
-        # Si l'utilisateur a fourni un critère précis, l'utiliser directement
-        # comme requête de recherche sans passer par l'IA (qui pourrait déformer
-        # la demande). L'IA n'est utilisée que pour les suggestions sans critère
-        # (bouton "Surprends-moi").
+        # Si l'utilisateur a fourni un critère court (1-5 mots), l'utiliser
+        # directement. Si c'est une phrase longue ou complexe, utiliser l'IA
+        # pour extraire une requête de recherche courte.
         query = ""
         # Détecter la demande "sans alcool"
         criteria_lower = (criteria or "").lower()
@@ -528,8 +527,21 @@ class CocktailManager:
                           ("sans alcool", "mocktail", "no alcohol", "virgin",
                            "boisson sans alcool"))
         
-        if not criteria:
+        criteria_words = criteria.strip().split() if criteria else []
+        is_long_phrase = len(criteria_words) > 5
+        
+        if not criteria or (is_long_phrase and ai_ent):
+            # Pas de critère → l'IA génère une requête (Surprends-moi)
+            # Phrase longue → l'IA extrait une requête courte
             if ai_ent:
+                if is_long_phrase:
+                    instructions = (
+                        f"{weather_ctx}{constraints}"
+                        f"Transforme cette demande en requête de recherche de "
+                        f"cocktail courte (2 à 5 mots, en ANGLAIS) : « {criteria} ». "
+                        "Il s'agit d'un COCKTAIL. "
+                        "Réponds uniquement avec la requête de recherche."
+                    )
                 try:
                     response = await self.hass.services.async_call(
                         "ai_task", "generate_data",
@@ -557,7 +569,17 @@ class CocktailManager:
                     query = ""
 
         if not query:
-            query = criteria or "cocktail"
+            # Fallback : extraire les mots-clés pertinents de la phrase
+            if is_long_phrase:
+                # Garder les mots > 3 lettres, igniser les mots vides
+                stop_words = {"propose", "moi", "un", "une", "des", "avec", "sans",
+                              "facile", "faire", "base", "pour", "the", "and",
+                              "cocktail", "drink", "boisson", "alcool"}
+                keywords = [w for w in criteria_words
+                           if len(w) > 3 and w.lower() not in stop_words]
+                query = " ".join(keywords[:4]) if keywords else "cocktail"
+            else:
+                query = criteria or "cocktail"
 
         _LOGGER.info("Requête cocktail suggérée : %s (sans_alcool=%s)", query, sans_alcool)
         results = await self.async_search(query, limit=max(limit * 2, 10), sans_alcool=sans_alcool)
